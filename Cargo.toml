@@ -1,0 +1,13 @@
+[package]
+name = "palcrypto-rs"
+version = "0.1.0"
+edition = "2021"
+authors = ["Tiny.Twist <tiny.mahua@gmail.com>"]
+description = "A crypto lib."
+readme = "README.md"
+homepage = "https://github.com/bambipig/palcrypto-rs"
+repository = "https://github.com/bambipig/palcrypto-rs"
+license = "MIT"
+keywords = ["crypto"]
+
+[dependencies]
