@@ -11,3 +11,7 @@ license = "MIT"
 keywords = ["crypto"]
 
 [dependencies]
+anyhow = { version = "1.0.96" }
+aes-gcm = { version = "0.10.3", features = ["alloc", "heapless"]}
+crypto_box = { version = "0.9.1", features = ["chacha20"] }
+crypto-common = { version = "0.1.6" }
