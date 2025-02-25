@@ -4,6 +4,20 @@ use anyhow::Result;
 
 pub const NONCE_LEN: usize = 24;
 
+pub struct PalCryptoPublicKey([u8; KEY_SIZE]);
+impl PalCryptoPublicKey {
+    pub fn public_key(&self) -> PublicKey {
+        PublicKey::from_slice(&self.0).unwrap()
+    }
+}
+pub struct PalCryptoSecretKey([u8; KEY_SIZE]);
+impl PalCryptoSecretKey {
+    pub fn secret_key(&self) -> SecretKey {
+        SecretKey::from_slice(&self.0).unwrap()
+    }
+}
+
+
 pub struct PalCryptoKeyPair{
     secret_key_bytes: [u8; KEY_SIZE],
     public_key_bytes:  [u8; KEY_SIZE],
