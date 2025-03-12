@@ -7,11 +7,11 @@ use aes_gcm::aead::generic_array::GenericArray;
 use anyhow::Result;
 
 
-const EAS_KEY_LEN_32: usize = 32;
-const EAS_NONCE_LEN_12 : usize = 12;
+const AES_KEY_LEN_32: usize = 32;
+const AES_NONCE_LEN_12 : usize = 12;
 
 #[derive(Clone)]
-pub struct PalAesKey(pub [u8; EAS_KEY_LEN_32]);
+pub struct PalAesKey(pub [u8; AES_KEY_LEN_32]);
 
 impl PalAesKey {
     pub fn as_bytes(&self) -> Vec<u8> {
@@ -37,7 +37,7 @@ pub fn pal_aes_encrypt(pal_aes_key_bytes: &[u8], plain_bytes: &[u8]) -> Result<V
 
 pub fn pal_aes_decrypt(pal_aes_key_bytes: &[u8], encrypted_bytes: &[u8], nonce_len: Option<usize>) -> Result<Vec<u8>> {
     let cipher = Aes256Gcm::new(GenericArray::from_slice(&pal_aes_key_bytes));
-    let nonce_len = nonce_len.unwrap_or(EAS_NONCE_LEN_12);
+    let nonce_len = nonce_len.unwrap_or(AES_NONCE_LEN_12);
     let offset = encrypted_bytes.len() - nonce_len;
     let nonce = encrypted_bytes[offset..].to_vec();
     let buffer = encrypted_bytes[..offset].to_vec();
