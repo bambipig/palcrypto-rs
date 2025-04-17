@@ -1,6 +1,8 @@
-use crypto_box::{aead::{Aead, AeadCore, OsRng}, ChaChaBox, KEY_SIZE};
+use crypto_box::{aead::{Aead, AeadCore, OsRng}, KEY_SIZE};
 use crypto_box::aead::generic_array::GenericArray;
 use anyhow::Result;
+use ed25519_dalek::{Signer, Verifier};
+use crate::utils::vec2array;
 
 pub const NONCE_LEN: usize = 24;
 
@@ -20,7 +22,7 @@ impl PalCryptoKeyPair {
     }
 
     pub fn make_secret_key(secret_key_bytes: [u8; KEY_SIZE]) -> crypto_box::SecretKey {
-        let signing_key = Self::make_signing_key(secret_key_bytes);
+        let signing_key = Self::make_signing_key(secret_key_bytes.as_slice());
         crypto_box::SecretKey::from(signing_key.to_scalar())
     }
 
@@ -29,15 +31,29 @@ impl PalCryptoKeyPair {
     }
 
     pub fn make_public_key(public_key_bytes: [u8; KEY_SIZE]) -> crypto_box::PublicKey {
-        crypto_box::PublicKey::from(Self::make_verifying_key(public_key_bytes).to_montgomery())
+        crypto_box::PublicKey::from(Self::make_verifying_key(public_key_bytes.as_slice()).to_montgomery())
     }
 
-    pub fn make_signing_key(secret_key_bytes: [u8; KEY_SIZE]) -> ed25519_dalek::SigningKey {
-        ed25519_dalek::SigningKey::from_bytes(&ed25519_dalek::SecretKey::from(secret_key_bytes))
+    pub fn make_signing_key(secret_key_bytes: &[u8]) -> ed25519_dalek::SigningKey {
+        ed25519_dalek::SigningKey::from_bytes(
+            &ed25519_dalek::SecretKey::from(
+                vec2array(secret_key_bytes.to_vec())
+            )
+        )
     }
 
-    pub fn make_verifying_key(public_key_bytes: [u8; KEY_SIZE]) -> ed25519_dalek::VerifyingKey {
-        ed25519_dalek::VerifyingKey::from_bytes(&public_key_bytes).unwrap()
+    pub fn make_verifying_key(public_key_bytes: &[u8]) -> ed25519_dalek::VerifyingKey {
+        ed25519_dalek::VerifyingKey::from_bytes(&vec2array(public_key_bytes.to_vec())).unwrap()
+    }
+
+    pub fn make_cb_box(secret_key_bytes:&[u8], public_key_bytes: &[u8]) -> crypto_box::ChaChaBox {
+        crypto_box::ChaChaBox::new(
+            &PalCryptoKeyPair::make_public_key(
+                vec2array(public_key_bytes.to_vec())),
+            &PalCryptoKeyPair::make_secret_key(
+                vec2array(secret_key_bytes.to_vec())
+            ),
+        )
     }
 }
 
@@ -51,16 +67,13 @@ pub fn generate_pal_key_pair() -> PalCryptoKeyPair {
 }
 
 pub fn pal_cb_encrypt(public_key_bytes: &[u8], secret_key_bytes: &[u8], plain_bytes: &[u8]) -> Result<Vec<u8>>{
-    let encrypt_box = ChaChaBox::new(
-        &PalCryptoKeyPair::make_public_key(
-            public_key_bytes.to_vec().try_into().unwrap_or_else(|v: Vec<u8>| panic!("Expected a Vec of length {} but it was {}", KEY_SIZE, v.len()))),
-        &PalCryptoKeyPair::make_secret_key(
-            secret_key_bytes.to_vec().try_into().unwrap_or_else(|v: Vec<u8>| panic!("Expected a Vec of length {} but it was {}", KEY_SIZE, v.len()))),
+    let encrypt_box = PalCryptoKeyPair::make_cb_box(
+        secret_key_bytes,
+        public_key_bytes,
     );
 
-    let nonce = ChaChaBox::generate_nonce(&mut OsRng);
+    let nonce = crypto_box::ChaChaBox::generate_nonce(&mut OsRng);
     let mut cipher_data = encrypt_box.encrypt(&nonce, plain_bytes).unwrap();
-    // println!("ciphertext: {:?}", cipher_data);
     cipher_data.extend_from_slice(&nonce);
     Ok(cipher_data)
 }
@@ -68,11 +81,9 @@ pub fn pal_cb_encrypt(public_key_bytes: &[u8], secret_key_bytes: &[u8], plain_by
 pub fn pal_cb_decrypt(public_key_bytes: &[u8], secret_key_bytes: &[u8], ciphertext: &[u8], nonce_len: Option<usize>) -> Result<Vec<u8>>{
     let nonce_len = nonce_len.unwrap_or(NONCE_LEN);
     let offset = ciphertext.len() - nonce_len;
-    let decrypt_box = ChaChaBox::new(
-        &PalCryptoKeyPair::make_public_key(
-            public_key_bytes.to_vec().try_into().unwrap_or_else(|v: Vec<u8>| panic!("Expected a Vec of length {} but it was {}", KEY_SIZE, v.len()))),
-        &PalCryptoKeyPair::make_secret_key(
-            secret_key_bytes.to_vec().try_into().unwrap_or_else(|v: Vec<u8>| panic!("Expected a Vec of length {} but it was {}", KEY_SIZE, v.len()))),
+    let decrypt_box = PalCryptoKeyPair::make_cb_box(
+        secret_key_bytes,
+        public_key_bytes,
     );
     let nonce = ciphertext[offset..].to_vec();
     let payload_data = ciphertext[..offset].to_vec();
@@ -80,10 +91,20 @@ pub fn pal_cb_decrypt(public_key_bytes: &[u8], secret_key_bytes: &[u8], cipherte
     Ok(plain_bytes)
 }
 
+pub fn pal_cb_sign(secret_key_bytes: &[u8], msg: &[u8]) -> Result<Vec<u8>>{
+    let signing_key = PalCryptoKeyPair::make_signing_key(secret_key_bytes);
+    let sign =signing_key.sign(msg);
+    Ok(sign.to_bytes().to_vec())
+}
+
+pub fn pal_cb_verify_sign(public_key_bytes: &[u8], msg: &[u8], sign: &[u8]) -> Result<bool>{
+    let verifying_key = PalCryptoKeyPair::make_verifying_key(public_key_bytes);
+    let ok = verifying_key.verify(msg, &ed25519_dalek::Signature::from_slice(sign)?).is_ok();
+    Ok(ok)
+}
 
 #[cfg(test)]
 mod tests {
-    use ed25519_dalek::{Signer, Verifier};
     use super::*;
 
     #[test]
@@ -113,30 +134,10 @@ mod tests {
     }
 
     #[test]
-    fn sign_verify_self_works(){
+    fn sign_verify_works(){
         let key_pair = generate_pal_key_pair();
-
-        let signing_key = ed25519_dalek::SigningKey::from_bytes(
-            &ed25519_dalek::SecretKey::from(key_pair.secret_key_bytes));
-        let verifying_key = signing_key.verifying_key();
-        // println!("SELF verifying_key: {:?}", verifying_key);
         let msg = b"Hi, this is my signature.";
-        let sign = signing_key.sign(msg);
-
-        assert!(verifying_key.verify(msg, &sign).is_ok());
-    }
-
-    #[test]
-    fn sign_verify_each_works(){
-        let key_pair_a = generate_pal_key_pair();
-
-        let signing_key_a = ed25519_dalek::SigningKey::from_bytes(&ed25519_dalek::SecretKey::from(key_pair_a.clone().secret_key_bytes));
-        let verifying_key = signing_key_a.verifying_key();
-        let verifying_key_of_a = ed25519_dalek::VerifyingKey::from_bytes(&key_pair_a.public_key_bytes).unwrap();
-        let a_say = b"Hi, this is my signature.";
-        let sign = signing_key_a.sign(a_say);
-
-        assert!(verifying_key.verify(a_say, &sign).is_ok());
-        assert!(verifying_key_of_a.verify(a_say, &sign).is_ok())
+        let sign = pal_cb_sign(key_pair.secret_key_bytes.as_slice(), msg).unwrap();
+        assert!(pal_cb_verify_sign(key_pair.public_key_bytes.as_slice(), msg, &sign).unwrap());
     }
 }
