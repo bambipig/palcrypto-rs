@@ -1,3 +1,7 @@
+## 0.2.9
+
+Public util module.
+
 ## 0.2.8
 
 Fix sign and verify features, optimize code.
